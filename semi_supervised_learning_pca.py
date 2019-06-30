@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 
 regression_method = 'pls'  # 'pls' or 'rr' or 'lasso' or 'en' or 'lsvr' or 'nsvr' or 'dt' or 'rf' or 'gp'
 
-max_pca_component_number = 100
+max_pca_component_number = 150
 threshold_of_rate_of_same_value = 1
 fold_number = 2
 max_pls_component_number = 30
