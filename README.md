@@ -1,1 +1,1 @@
-# semi_supervised_learning
+# Semi Supervised Learning
