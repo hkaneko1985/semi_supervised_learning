@@ -10,6 +10,7 @@ import matplotlib.figure as figure
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.spatial.distance import cdist
 from sklearn import model_selection, svm, tree
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
@@ -41,12 +42,57 @@ dt_min_samples_leaf = 3  # 葉ごとのサンプル数の最小値
 random_forest_number_of_trees = 300  # Number of decision trees for random forest
 random_forest_x_variables_rates = np.arange(1, 10,
                                             dtype=float) / 10  # Ratio of the number of X-variables for random forest
+k_in_knn = 5
+ratio_of_training_samples_in_ad = 0.997
 
 # load data set
 supervised_dataset = pd.read_csv('descriptors_with_logS.csv', encoding='SHIFT-JIS', index_col=0)
 unsupervised_dataset = pd.read_csv('descriptors_for_prediction.csv', encoding='SHIFT-JIS', index_col=0)
 number_of_supervised_samples = supervised_dataset.shape[0]
-x_all_dataset = pd.concat([supervised_dataset.iloc[:, 1:], unsupervised_dataset], axis=0)
+
+# set AD and select unsupervised samples
+supervised_x = supervised_dataset.iloc[:, 1:]
+unsupervised_x = unsupervised_dataset.copy()
+rate_of_same_value = list()
+num = 0
+for x_variable_name in supervised_x.columns:
+    num += 1
+    #    print('{0} / {1}'.format(num, x_all_dataset.shape[1]))
+    same_value_number = supervised_x[x_variable_name].value_counts()
+    rate_of_same_value.append(float(same_value_number[same_value_number.index[0]] / supervised_x.shape[0]))
+deleting_variable_numbers = np.where(np.array(rate_of_same_value) >= threshold_of_rate_of_same_value)
+
+if len(deleting_variable_numbers[0]) != 0:
+    unsupervised_x = unsupervised_x.drop(supervised_x.columns[deleting_variable_numbers], axis=1)
+    supervised_x = supervised_x.drop(supervised_x.columns[deleting_variable_numbers], axis=1)
+    print('Variable numbers zero variance: {0}'.format(deleting_variable_numbers[0] + 1))
+print('# of X-variables: {0}'.format(supervised_x.shape[1]))
+
+# autoscaling      
+autoscaled_supervised_x = (supervised_x - supervised_x.mean(axis=0)) / supervised_x.std(axis=0, ddof=1)
+autoscaled_unsupervised_x = (unsupervised_x - supervised_x.mean(axis=0)) / supervised_x.std(axis=0, ddof=1)
+
+# set AD
+distance_between_autoscaled_supervised_x = cdist(autoscaled_supervised_x, autoscaled_supervised_x)
+distance_between_autoscaled_supervised_x.sort()
+knn_distance = np.mean(distance_between_autoscaled_supervised_x[:, 1:k_in_knn + 1], axis=1)
+
+# set AD threshold
+knn_distance.sort()
+ad_threshold = knn_distance[
+    round(distance_between_autoscaled_supervised_x.shape[0] * ratio_of_training_samples_in_ad) - 1]
+
+# AD check
+distance_between_autoscaled_x = cdist(autoscaled_unsupervised_x, autoscaled_supervised_x)
+distance_between_autoscaled_x.sort()
+knn_distance_x = np.mean(distance_between_autoscaled_x[:, 0:k_in_knn], axis=1)
+
+# select unsupervised samples
+selected_unsupervised_sample_numbers = np.where(knn_distance_x <= ad_threshold)[0]
+print('# of selected samples :', len(selected_unsupervised_sample_numbers))
+
+x_all_dataset = pd.concat(
+    [supervised_dataset.iloc[:, 1:], unsupervised_dataset.iloc[selected_unsupervised_sample_numbers, :]], axis=0)
 x_all_dataset = x_all_dataset.loc[:, x_all_dataset.mean().index]  # 平均を計算できる変数だけ選択
 x_all_dataset = x_all_dataset.replace(np.inf, np.nan).fillna(np.nan)  # infをnanに置き換えておく
 x_all_dataset = x_all_dataset.dropna(axis=1)  # nanのある変数を削除
@@ -55,17 +101,12 @@ y_train = supervised_dataset.iloc[:, 0]
 
 rate_of_same_value = list()
 num = 0
-for X_variable_name in x_all_dataset.columns:
+for x_variable_name in x_all_dataset.columns:
     num += 1
     #    print('{0} / {1}'.format(num, x_all_dataset.shape[1]))
-    same_value_number = x_all_dataset[X_variable_name].value_counts()
+    same_value_number = x_all_dataset[x_variable_name].value_counts()
     rate_of_same_value.append(float(same_value_number[same_value_number.index[0]] / x_all_dataset.shape[0]))
 deleting_variable_numbers = np.where(np.array(rate_of_same_value) >= threshold_of_rate_of_same_value)
-
-"""
-# delete descriptors with zero variance
-deleting_variable_numbers = np.where( raw_Xtrain.var() == 0 )
-"""
 
 if len(deleting_variable_numbers[0]) == 0:
     x_all = x_all_dataset.copy()
